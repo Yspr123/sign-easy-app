@@ -7,10 +7,18 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Upload, FileText, X, Eye } from "lucide-react"
+import { Upload, FileText, X, Eye, Download } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DocumentPreview } from "./DocumentPreview"
+import { SignatureModal } from "./SignatureModal"
+import { generateSignedPDF, downloadBlob } from "./PdfGenerator"
 
+interface SignatureData {
+  name: string
+  email: string
+  date: string
+  signature: string
+}
 
 const uploadSchema = z.object({
   files: z.array(z.instanceof(File)).min(1, "Please select at least one file"),
@@ -23,12 +31,29 @@ const ACCEPTED_FILE_TYPES = {
   "application/msword": [".doc"],
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
   "text/plain": [".txt"],
-  "application/vnd.ms-powerpoint": [".ppt"]
+  "application/rtf": [".rtf"],
+  "application/vnd.oasis.opendocument.text": [".odt"],
+  "application/vnd.ms-powerpoint": [".ppt"],
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
+  "application/vnd.ms-excel": [".xls"],
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
+  "image/tiff": [".tiff"],
+  "image/gif": [".gif"],
 }
 
 export function DocumentUpload() {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [previewFile, setPreviewFile] = useState<File | null>(null)
+  const [showSignatureModal, setShowSignatureModal] = useState(false)
+  const [signedDocuments, setSignedDocuments] = useState<
+    Array<{
+      files: File[]
+      signatureData: SignatureData
+    }>
+  >([])
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
 
   const form = useForm<UploadFormData>({
     resolver: zodResolver(uploadSchema),
@@ -60,11 +85,49 @@ export function DocumentUpload() {
   }
 
   const onSubmit = (data: UploadFormData) => {
-    console.log("Uploading files:", data.files)
-    // Handle file upload logic here
+    console.log("[v0] Opening signature modal for files:", data.files)
+    setShowSignatureModal(true)
   }
 
-  const supportedTypes = "PDF, DOC, DOCX, TXT, PPT"
+  const handleSignatureComplete = (signatureData: SignatureData) => {
+    console.log("[v0] Signature completed:", signatureData)
+    setSignedDocuments((prev) => [
+      ...prev,
+      {
+        files: uploadedFiles,
+        signatureData,
+      },
+    ])
+    setShowSignatureModal(false)
+    setUploadedFiles([])
+    form.reset()
+  }
+
+  const handleDownloadSigned = async (index: number) => {
+    const signedDoc = signedDocuments[index]
+    console.log("[v0] Downloading signed document:", signedDoc)
+
+    setIsGeneratingPDF(true)
+    try {
+      // Generate signed PDF for the first file (or combine multiple files)
+      const primaryFile = signedDoc.files[0]
+      const signedPdfBlob = await generateSignedPDF(primaryFile, signedDoc.signatureData)
+
+      // Create filename
+      const originalName = primaryFile.name.split(".")[0]
+      const filename = `${originalName}_signed.pdf`
+
+      // Download the file
+      downloadBlob(signedPdfBlob, filename)
+    } catch (error) {
+      console.error("[v0] Error generating signed PDF:", error)
+      alert("Error generating signed document. Please try again.")
+    } finally {
+      setIsGeneratingPDF(false)
+    }
+  }
+
+  const supportedTypes = "PDF, DOC, DOCX, TXT, RTF, ODT, PPT, PPTX, XLS, XLSX, JPG, JPEG, PNG, TIFF, GIF"
 
   return (
     <div className="space-y-6">
@@ -146,8 +209,48 @@ export function DocumentUpload() {
         )}
       </form>
 
+      {/* Signed Documents */}
+      {signedDocuments.length > 0 && (
+        <Card className="p-6">
+          <h3 className="text-lg font-medium mb-4">Signed Documents</h3>
+          <div className="space-y-3">
+            {signedDocuments.map((signedDoc, index) => (
+              <div key={index} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center space-x-3">
+                  <FileText className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium text-sm">{signedDoc.files.map((f) => f.name).join(", ")}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Signed by {signedDoc.signatureData.name} on {signedDoc.signatureData.date}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDownloadSigned(index)}
+                  disabled={isGeneratingPDF}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  {isGeneratingPDF ? "Generating..." : "Download"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Document Preview Modal */}
       {previewFile && <DocumentPreview file={previewFile} onClose={() => setPreviewFile(null)} />}
+
+      {/* SignatureModal */}
+      <SignatureModal
+        isOpen={showSignatureModal}
+        onClose={() => setShowSignatureModal(false)}
+        files={uploadedFiles}
+        onComplete={handleSignatureComplete}
+      />
     </div>
   )
 }
