@@ -39,3 +39,96 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDEs and editors
+.vscode/
+.idea/
+.history/
+.swp
+.swo
+.sublime*
+.project
+.classpath
+.settings/
+.factorypath
+.c9/
+.envrc
+.code-workspace
+.spyderproject
+.spyproject
+.ropeproject
+.ipynb_checkpoints/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon?
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.apdisk
+.com.apple.timemachine.donotpresent
+
+# Logs
+*.log
+*.out
+*.err
+
+# Compiled source
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+*.pyc
+*.pyo
+*.pyd
+*.ipynb_checkpoints
+
+# Package distribution
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+*.egg
+*.whl
+*.wheel
+*.egg-info/
+dist/
+build/
+
+# Python virtual environments
+venv/
+.venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Anaconda
+.conda/
+.anaconda_backup/
+anaconda3/
+miniconda3/
+.envs/
+.condarc
+.conda_env/
+.conda_lock/
+.conda_pkgs/
+.conda_envs/
+.conda_build/
+.conda_test/
+.conda_cache/
+.conda_tmp/
+.conda_history/
+.conda-meta/
