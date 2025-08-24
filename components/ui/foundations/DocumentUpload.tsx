@@ -7,17 +7,16 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Upload, FileText, X, Eye, Download } from "lucide-react"
+import { Upload, FileText, X, Eye, Download, MapPin } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DocumentPreview } from "./DocumentPreview"
-import { SignatureModal } from "./SignatureModal"
 import { generateSignedPDF, downloadBlob } from "./PdfGenerator"
+import { useFieldTracking } from "@/hooks/UseFieldTracking"
+import type { PlacedField } from "./DocumentFieldOverlay"
 
-interface SignatureData {
-  name: string
-  email: string
-  date: string
-  signature: string
+interface SignedDocument {
+  files: File[]
+  fieldPositions: Map<string, PlacedField[]>
 }
 
 const uploadSchema = z.object({
@@ -46,14 +45,10 @@ const ACCEPTED_FILE_TYPES = {
 export function DocumentUpload() {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [previewFile, setPreviewFile] = useState<File | null>(null)
-  const [showSignatureModal, setShowSignatureModal] = useState(false)
-  const [signedDocuments, setSignedDocuments] = useState<
-    Array<{
-      files: File[]
-      signatureData: SignatureData
-    }>
-  >([])
+  const [signedDocuments, setSignedDocuments] = useState<SignedDocument[]>([])
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
+
+  const { updateDocumentFields, getDocumentFields, removeDocumentFields, hasFields, getFieldCount } = useFieldTracking()
 
   const form = useForm<UploadFormData>({
     resolver: zodResolver(uploadSchema),
@@ -79,45 +74,50 @@ export function DocumentUpload() {
   })
 
   const removeFile = (index: number) => {
+    const fileToRemove = uploadedFiles[index]
+    removeDocumentFields(fileToRemove)
+
     const newFiles = uploadedFiles.filter((_, i) => i !== index)
     setUploadedFiles(newFiles)
     form.setValue("files", newFiles)
   }
 
   const onSubmit = (data: UploadFormData) => {
-    console.log("[v0] Opening signature modal for files:", data.files)
-    setShowSignatureModal(true)
+    console.log("[v0] Opening document preview for field placement:", data.files)
+    if (data.files.length > 0) {
+      setPreviewFile(data.files[0])
+    }
   }
 
-  const handleSignatureComplete = (signatureData: SignatureData) => {
-    console.log("[v0] Signature completed:", signatureData)
-    setSignedDocuments((prev) => [
-      ...prev,
-      {
-        files: uploadedFiles,
-        signatureData,
-      },
-    ])
-    setShowSignatureModal(false)
-    setUploadedFiles([])
-    form.reset()
-  }
+  const handleDownloadDocument = async (file: File) => {
+    console.log("[v0] Downloading document with fields:", file)
 
-  const handleDownloadSigned = async (index: number) => {
-    const signedDoc = signedDocuments[index]
-    console.log("[v0] Downloading signed document:", signedDoc)
+    const fields = getDocumentFields(file)
+    if (fields.length === 0) {
+      alert("Please add and fill some fields before downloading.")
+      return
+    }
+
+    const emptyFields = fields.filter((field) => !field.value || field.value.trim() === "")
+    if (emptyFields.length > 0) {
+      alert("Please fill in all fields before downloading.")
+      return
+    }
 
     setIsGeneratingPDF(true)
     try {
-      // Generate signed PDF for the first file (or combine multiple files)
-      const primaryFile = signedDoc.files[0]
-      const signedPdfBlob = await generateSignedPDF(primaryFile, signedDoc.signatureData)
+      const signatureData = {
+        name: fields.find((f) => f.type === "name")?.value || "",
+        email: fields.find((f) => f.type === "email")?.value || "",
+        date: fields.find((f) => f.type === "date")?.value || "",
+        signature: fields.find((f) => f.type === "signature")?.value || "",
+      }
 
-      // Create filename
-      const originalName = primaryFile.name.split(".")[0]
+      const signedPdfBlob = await generateSignedPDF(file, signatureData, fields)
+
+      const originalName = file.name.split(".")[0]
       const filename = `${originalName}_signed.pdf`
 
-      // Download the file
       downloadBlob(signedPdfBlob, filename)
     } catch (error) {
       console.error("[v0] Error generating signed PDF:", error)
@@ -127,12 +127,15 @@ export function DocumentUpload() {
     }
   }
 
+  const handleFieldsChanged = (file: File, fields: PlacedField[]) => {
+    updateDocumentFields(file, fields)
+  }
+
   const supportedTypes = "PDF, DOC, DOCX, TXT, RTF, ODT, PPT, PPTX, XLS, XLSX, JPG, JPEG, PNG, TIFF, GIF"
 
   return (
     <div className="space-y-6">
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        {/* Upload Area */}
         <Card className="p-8">
           <div
             {...getRootProps()}
@@ -167,7 +170,6 @@ export function DocumentUpload() {
           <p className="text-sm text-muted-foreground mt-4 text-center">Supported file types: {supportedTypes}</p>
         </Card>
 
-        {/* Uploaded Files */}
         {uploadedFiles.length > 0 && (
           <Card className="p-6">
             <h3 className="text-lg font-medium mb-4">Uploaded Files</h3>
@@ -178,7 +180,20 @@ export function DocumentUpload() {
                     <FileText className="w-5 h-5 text-muted-foreground" />
                     <div>
                       <p className="font-medium text-sm">{file.name}</p>
-                      <p className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                      <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                        <span>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                        {hasFields(file) && (
+                          <>
+                            <span>•</span>
+                            <div className="flex items-center space-x-1">
+                              <MapPin className="w-3 h-3" />
+                              <span>
+                                {getFieldCount(file)} field{getFieldCount(file) !== 1 ? "s" : ""}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -187,6 +202,17 @@ export function DocumentUpload() {
                       file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") && (
                       <Button type="button" variant="ghost" size="sm" onClick={() => setPreviewFile(file)}>
                         <Eye className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {hasFields(file) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDownloadDocument(file)}
+                        disabled={isGeneratingPDF}
+                      >
+                        <Download className="w-4 h-4" />
                       </Button>
                     )}
                     <Button type="button" variant="ghost" size="sm" onClick={() => removeFile(index)}>
@@ -199,58 +225,23 @@ export function DocumentUpload() {
           </Card>
         )}
 
-        {/* Submit Button */}
         {uploadedFiles.length > 0 && (
           <div className="flex justify-end">
             <Button type="submit" size="lg">
-              Upload Documents
+              Add Fields to Documents
             </Button>
           </div>
         )}
       </form>
 
-      {/* Signed Documents */}
-      {signedDocuments.length > 0 && (
-        <Card className="p-6">
-          <h3 className="text-lg font-medium mb-4">Signed Documents</h3>
-          <div className="space-y-3">
-            {signedDocuments.map((signedDoc, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div className="flex items-center space-x-3">
-                  <FileText className="w-5 h-5 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium text-sm">{signedDoc.files.map((f) => f.name).join(", ")}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Signed by {signedDoc.signatureData.name} on {signedDoc.signatureData.date}
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDownloadSigned(index)}
-                  disabled={isGeneratingPDF}
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  {isGeneratingPDF ? "Generating..." : "Download"}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </Card>
+      {previewFile && (
+        <DocumentPreview
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
+          onFieldsChanged={(fields) => handleFieldsChanged(previewFile, fields)}
+          initialFields={getDocumentFields(previewFile)}
+        />
       )}
-
-      {/* Document Preview Modal */}
-      {previewFile && <DocumentPreview file={previewFile} onClose={() => setPreviewFile(null)} />}
-
-      {/* SignatureModal */}
-      <SignatureModal
-        isOpen={showSignatureModal}
-        onClose={() => setShowSignatureModal(false)}
-        files={uploadedFiles}
-        onComplete={handleSignatureComplete}
-      />
     </div>
   )
 }
