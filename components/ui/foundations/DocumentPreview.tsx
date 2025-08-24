@@ -1,20 +1,27 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { DndContext, type DragEndEvent, DragOverlay, type DragStartEvent } from "@dnd-kit/core"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { X, Download, FileText, FileImage, Presentation, File } from "lucide-react"
-import Image from "next/image"
+import type { PlacedField } from "./DocumentFieldOverlay"
+import { FieldToolbox, DraggableField, type FieldType } from "./DraggableField"
 
 interface DocumentPreviewProps {
   file: File
   onClose: () => void
+  onFieldsChanged?: (fields: PlacedField[]) => void
+  initialFields?: PlacedField[]
 }
 
-export function DocumentPreview({ file, onClose }: DocumentPreviewProps) {
+export function DocumentPreview({ file, onClose, onFieldsChanged, initialFields = [] }: DocumentPreviewProps) {
   const [previewUrl, setPreviewUrl] = useState<string>("")
   const [textContent, setTextContent] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
+  const [placedFields, setPlacedFields] = useState<PlacedField[]>(initialFields)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [activeField, setActiveField] = useState<{ id: string; type: FieldType } | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -95,6 +102,56 @@ export function DocumentPreview({ file, onClose }: DocumentPreviewProps) {
     return "Document"
   }
 
+  const handleFieldPlaced = (field: PlacedField) => {
+    const newFields = [...placedFields, field]
+    setPlacedFields(newFields)
+    onFieldsChanged?.(newFields)
+  }
+
+  const handleFieldRemoved = (fieldId: string) => {
+    const newFields = placedFields.filter((field) => field.id !== fieldId)
+    setPlacedFields(newFields)
+    onFieldsChanged?.(newFields)
+  }
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event
+    if (active.data.current?.type === "field") {
+      setActiveField({
+        id: active.id as string,
+        type: active.data.current.fieldType as FieldType,
+      })
+    }
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    setActiveField(null)
+
+    if (over && over.id === "document-drop-zone" && active.data.current?.type === "field") {
+      const dropEvent = event as any
+      if (dropEvent.delta) {
+        // Calculate drop position based on drag delta and initial position
+        const rect = document.getElementById("document-drop-zone")?.getBoundingClientRect()
+        if (rect) {
+          const x = dropEvent.delta.x + 100 // Approximate starting position
+          const y = dropEvent.delta.y + 100
+
+          const newField: PlacedField = {
+            id: `placed-${active.data.current.fieldType}-${Date.now()}`,
+            type: active.data.current.fieldType as FieldType,
+            x: Math.max(0, x - 50),
+            y: Math.max(0, y - 15),
+            page: currentPage,
+            width: active.data.current.fieldType === "signature" ? 120 : 100,
+            height: active.data.current.fieldType === "signature" ? 40 : 30,
+          }
+          handleFieldPlaced(newField)
+        }
+      }
+    }
+  }
+
   const renderPreview = () => {
     if (isLoading) {
       return (
@@ -118,7 +175,11 @@ export function DocumentPreview({ file, onClose }: DocumentPreviewProps) {
     if (file.type.startsWith("image/") && previewUrl) {
       return (
         <div className="w-full max-h-[600px] border rounded-lg overflow-hidden flex items-center justify-center bg-muted/20">
-         <Image width={100} height={100}  alt={file.name}  className="max-w-full max-h-full object-contain"  src={previewUrl || "/placeholder.svg"}/>
+          <img
+            src={previewUrl || "/placeholder.svg"}
+            alt={file.name}
+            className="max-w-full max-h-full object-contain"
+          />
         </div>
       )
     }
@@ -161,25 +222,39 @@ export function DocumentPreview({ file, onClose }: DocumentPreviewProps) {
   }
 
   return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-        <DialogHeader className="p-6 pb-0">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-lg font-semibold">{file.name}</DialogTitle>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={downloadFile}>
-                <Download className="w-4 h-4 mr-2" />
-                Download
-              </Button>
-              <Button variant="ghost" size="sm" onClick={onClose}>
-                <X className="w-4 h-4" />
-              </Button>
+    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <Dialog open={true} onOpenChange={onClose}>
+        <DialogContent className="max-w-6xl max-h-[95vh] p-0">
+          <DialogHeader className="p-6 pb-0">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-lg font-semibold">{file.name}</DialogTitle>
+              <div className="flex items-center space-x-2">
+                <Button variant="outline" size="sm" onClick={downloadFile}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </Button>
+                <Button variant="ghost" size="sm" onClick={onClose}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
-          </div>
-        </DialogHeader>
+          </DialogHeader>
 
-        <div className="p-6 pt-4">{renderPreview()}</div>
-      </DialogContent>
-    </Dialog>
+          <div className="p-6 pt-4 space-y-4">
+            <FieldToolbox />
+
+            {placedFields.length > 0 && (
+              <div className="text-sm text-muted-foreground">
+                {placedFields.length} field{placedFields.length !== 1 ? "s" : ""} placed on document
+              </div>
+            )}
+
+            <div id="document-drop-zone">{renderPreview()}</div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <DragOverlay>{activeField ? <DraggableField id={activeField.id} type={activeField.type} /> : null}</DragOverlay>
+    </DndContext>
   )
 }
