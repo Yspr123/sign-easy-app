@@ -14,7 +14,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
 import { Upload, Trash2 } from "lucide-react"
-import Image from "next/image"
 
 const signatureSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -86,6 +85,10 @@ export function SignatureModal({ isOpen, onClose, files, onComplete }: Signature
     onComplete({ ...data, signature })
   }
 
+  const handleDownload = async () => {
+    // This will be implemented to combine signature with document
+    console.log("[v0] Download functionality will be implemented")
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -181,8 +184,11 @@ export function SignatureModal({ isOpen, onClose, files, onComplete }: Signature
                   ) : (
                     <div className="space-y-4">
                       <div className="border rounded-lg p-4 bg-white">
-                        
-                        <Image width={100} height={100}  alt={uploadedSignature }  className="max-w-full max-h-full object-contain"  src={uploadedSignature || "/placeholder.svg"}/>
+                        <img
+                          src={uploadedSignature || "/placeholder.svg"}
+                          alt="Uploaded signature"
+                          className="max-h-32 mx-auto"
+                        />
                       </div>
                       <div className="flex justify-end">
                         <Button type="button" variant="outline" size="sm" onClick={removeUploadedSignature}>
